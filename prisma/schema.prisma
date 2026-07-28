@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Candidate {
+  id                  String   @id @default(cuid())
+  name                String
+  email               String?
+  phone               String?
+  location            String?
+  skills              String?
+  education           String?
+  experience          String?
+  projects            String?
+  certifications      String?
+  languages           String?
+  professionalSummary String?
+  recommendedRole     String?
+  experienceLevel     String?
+  category            String?
+  resumes             Resume[]
+  chatHistory         ChatHistory[]
+  recruiterNotes      RecruiterNote[]
+  interviews          Interview[]
+  activityLogs        ActivityLog[]
+  recruitmentStage    String   @default("Applied")
+  priority            String   @default("Medium")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Resume {
+  id               String    @id @default(cuid())
+  candidateId      String
+  candidate        Candidate @relation(fields: [candidateId], references: [id])
+  fileName         String
+  fileUrl          String
+  fileType         String
+  processingStatus String    @default("PENDING")
+  extractedText    String?
+  uploadedAt       DateTime  @default(now())
+}
+
+model ChatHistory {
+  id          String     @id @default(cuid())
+  userId      String?    // Optional for now since we don't have auth fully wired
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id])
+  question    String
+  answer      String
+  createdAt   DateTime   @default(now())
+}
+
+model JobDescription {
+  id                String   @id @default(cuid())
+  jobTitle          String
+  company           String?
+  department        String?
+  employmentType    String?
+  location          String?
+  requiredSkills    String?  // Stored as JSON string array
+  preferredSkills   String?  // Stored as JSON string array
+  responsibilities  String?  // Stored as JSON string array
+  keywords          String?  // Stored as JSON string array
+  minimumExperience String?
+  education         String?
+  rawText           String
+  vector            String?  // Stored as JSON string array to cache 768 float array
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model RecruiterNote {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  content     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Interview {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  interviewer String?
+  date        DateTime?
+  time        String?
+  type        String?
+  location    String?
+  meetingLink String?
+  status      String    @default("Scheduled")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  action      String
+  description String?
+  createdAt   DateTime  @default(now())
+}

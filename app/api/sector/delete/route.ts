@@ -1,0 +1,22 @@
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+
+export async function POST(request: NextRequest) {
+  try {
+    const { sectorName } = await request.json()
+
+    if (!sectorName) {
+      return NextResponse.json({ error: 'Missing sectorName' }, { status: 400 })
+    }
+
+    const updated = await prisma.candidate.updateMany({
+      where: { category: sectorName },
+      data: { category: null } // Or 'Uncategorized' if string
+    })
+
+    return NextResponse.json({ success: true, count: updated.count })
+  } catch (error: any) {
+    console.error('Failed to delete sector:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}

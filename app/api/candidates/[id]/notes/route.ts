@@ -1,0 +1,47 @@
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const notes = await prisma.recruiterNote.findMany({
+      where: { candidateId: params.id },
+      orderBy: { createdAt: 'desc' }
+    })
+    return NextResponse.json({ success: true, notes })
+  } catch (error) {
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const { content } = await request.json()
+    if (!content) return NextResponse.json({ error: 'Content required' }, { status: 400 })
+
+    const note = await prisma.recruiterNote.create({
+      data: {
+        candidateId: params.id,
+        content
+      }
+    })
+    return NextResponse.json({ success: true, note })
+  } catch (error) {
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const noteId = searchParams.get('noteId')
+    
+    if (!noteId) return NextResponse.json({ error: 'Note ID required' }, { status: 400 })
+
+    await prisma.recruiterNote.delete({
+      where: { id: noteId, candidateId: params.id }
+    })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
