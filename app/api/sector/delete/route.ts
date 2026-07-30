@@ -14,6 +14,14 @@ export async function POST(request: NextRequest) {
       data: { category: null } // Or 'Uncategorized' if string
     })
 
+    try {
+      await prisma.sector.delete({
+        where: { name: sectorName }
+      })
+    } catch (e) {
+      console.error("Sector model delete issue:", e)
+    }
+
     return NextResponse.json({ success: true, count: updated.count })
   } catch (error: any) {
     console.error('Failed to delete sector:', error)

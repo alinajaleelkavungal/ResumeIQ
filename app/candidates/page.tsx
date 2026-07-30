@@ -8,10 +8,33 @@ export default async function CandidatesPage() {
     orderBy: { createdAt: 'desc' },
     include: { resumes: true }
   })
+  
+  const jobs = await prisma.jobDescription.findMany({
+    select: { company: true },
+    distinct: ['company']
+  })
+  const jobCompanies = jobs.map(j => j.company).filter(Boolean) as string[]
+
+  const savedCompanies = await prisma.company.findMany({
+    select: { name: true }
+  })
+  const dbCompanies = savedCompanies.map(c => c.name)
+
+  const savedSectors = await prisma.sector.findMany({
+    select: { name: true }
+  })
+  const dbSectors = savedSectors.map(s => s.name)
+  
+  // Combine unique
+  const availableCompanies = Array.from(new Set([...jobCompanies, ...dbCompanies]))
 
   return (
     <div className="w-full min-h-screen bg-white">
-      <CandidateDatabase initialCandidates={candidates} />
+      <CandidateDatabase 
+        initialCandidates={candidates} 
+        availableCompanies={availableCompanies} 
+        savedSectors={dbSectors}
+      />
     </div>
   )
 }

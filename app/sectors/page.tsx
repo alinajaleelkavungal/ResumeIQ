@@ -8,9 +8,16 @@ export default async function SectorsPage() {
     select: { category: true }
   })
   
+  const savedSectors = await prisma.sector.findMany({
+    select: { name: true }
+  })
+  
   return (
     <div className="w-full min-h-screen bg-white">
-      <SectorsManager initialCandidates={candidates} />
+      <SectorsManager 
+        initialCandidates={candidates} 
+        savedSectors={savedSectors.map(s => s.name)} 
+      />
     </div>
   )
 }

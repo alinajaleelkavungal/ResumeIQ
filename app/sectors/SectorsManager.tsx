@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { Code, Stethoscope, Settings, Plus, FileText, Pencil, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-export default function SectorsManager({ initialCandidates }: { initialCandidates: { category: string | null }[] }) {
+export default function SectorsManager({ initialCandidates, savedSectors = [] }: { initialCandidates: { category: string | null }[], savedSectors?: string[] }) {
   const router = useRouter()
   const [candidates, setCandidates] = useState(initialCandidates)
   
@@ -17,7 +17,13 @@ export default function SectorsManager({ initialCandidates }: { initialCandidate
 
   const sectors = useMemo(() => {
     const counts: Record<string, number> = {}
+    
+    // DB Saved
+    savedSectors.forEach(name => { counts[name] = 0 })
+    
+    // Manual state
     manualSectors.forEach(name => { counts[name] = 0 })
+    
     candidates.forEach(c => {
       if (c.category && c.category !== 'Uncategorized') {
         counts[c.category] = (counts[c.category] || 0) + 1
@@ -34,14 +40,28 @@ export default function SectorsManager({ initialCandidates }: { initialCandidate
     }))
   }, [candidates, manualSectors])
 
-  const handleAddSectorSubmit = (e: React.KeyboardEvent<HTMLInputElement> | React.FocusEvent) => {
+  const handleAddSectorSubmit = async (e: React.KeyboardEvent<HTMLInputElement> | React.FocusEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     const val = newSectorName.trim();
     if (val && !sectors.find(s => s.name.toLowerCase() === val.toLowerCase())) {
       setManualSectors(prev => [...prev, val])
+      setNewSectorName('')
+      setIsAddingSector(false)
+      
+      try {
+        await fetch('/api/sector/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: val })
+        })
+        router.refresh()
+      } catch (err) {
+        console.error("Failed to add sector", err)
+      }
+    } else {
+      setNewSectorName('')
+      setIsAddingSector(false)
     }
-    setNewSectorName('')
-    setIsAddingSector(false)
   }
 
   const handleDeleteSector = async (sectorName: string) => {

@@ -8,9 +8,11 @@ import { useDropzone } from 'react-dropzone'
 
 interface CandidateDatabaseProps {
   initialCandidates: any[]
+  availableCompanies?: string[]
+  savedSectors?: string[]
 }
 
-export default function CandidateDatabase({ initialCandidates }: CandidateDatabaseProps) {
+export default function CandidateDatabase({ initialCandidates, availableCompanies = [], savedSectors = [] }: CandidateDatabaseProps) {
   const router = useRouter()
   const [candidates, setCandidates] = useState(initialCandidates)
   const [search, setSearch] = useState('')
@@ -35,7 +37,12 @@ export default function CandidateDatabase({ initialCandidates }: CandidateDataba
   const sectors = useMemo(() => {
     const counts: Record<string, number> = {}
     
-    // Seed with manual empty sectors
+    // Seed with saved sectors from DB
+    savedSectors.forEach(name => {
+      counts[name] = 0
+    })
+
+    // Seed with manual empty sectors (optimistic UI)
     manualSectors.forEach(name => {
       counts[name] = 0
     })
@@ -55,7 +62,7 @@ export default function CandidateDatabase({ initialCandidates }: CandidateDataba
             name.toLowerCase().includes('mechanic') || name.toLowerCase().includes('engineer') ? Settings :
             FileText
     }))
-  }, [candidates, manualSectors])
+  }, [candidates, manualSectors, savedSectors])
 
   const filteredCandidates = candidates.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -141,15 +148,30 @@ export default function CandidateDatabase({ initialCandidates }: CandidateDataba
 
   // --- Sector Management Logic ---
   
-  const handleAddSectorSubmit = (e: React.KeyboardEvent<HTMLInputElement> | React.FocusEvent) => {
+  const handleAddSectorSubmit = async (e: React.KeyboardEvent<HTMLInputElement> | React.FocusEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     
     const val = newSectorName.trim();
     if (val && !sectors.find(s => s.name.toLowerCase() === val.toLowerCase())) {
+      // Optimistic
       setManualSectors(prev => [...prev, val])
+      setNewSectorName('')
+      setIsAddingSector(false)
+      
+      try {
+        await fetch('/api/sector/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: val })
+        })
+        router.refresh()
+      } catch (err) {
+        console.error("Failed to add sector", err)
+      }
+    } else {
+      setNewSectorName('')
+      setIsAddingSector(false)
     }
-    setNewSectorName('')
-    setIsAddingSector(false)
   }
 
   const handleDeleteSector = async (e: React.MouseEvent, sectorName: string) => {
@@ -244,6 +266,51 @@ export default function CandidateDatabase({ initialCandidates }: CandidateDataba
       router.refresh()
     } catch (err) {
       console.error("Failed to update candidate sector", err)
+    }
+  }
+  
+  // --- Candidate Deletion & Company Assignment ---
+  
+  const handleDeleteCandidate = async (e: React.MouseEvent, candidateId: string) => {
+    e.stopPropagation()
+    if (!confirm("Are you sure you want to delete this candidate? This action cannot be undone.")) return;
+
+    // Optimistic delete
+    setCandidates(prev => prev.filter(c => c.id !== candidateId))
+
+    try {
+      await fetch('/api/candidate/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId })
+      })
+      router.refresh()
+    } catch (err) {
+      console.error("Failed to delete candidate", err)
+    }
+  }
+
+  const handleCompanyChange = async (e: React.ChangeEvent<HTMLSelectElement>, candidateId: string) => {
+    e.stopPropagation()
+    const newCompany = e.target.value;
+
+    // Optimistic update
+    setCandidates(prev => prev.map(c => 
+      c.id === candidateId ? { ...c, company: newCompany === "unassigned" ? null : newCompany } : c
+    ))
+
+    try {
+      await fetch('/api/candidate/update-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          candidateId, 
+          company: newCompany === "unassigned" ? null : newCompany 
+        })
+      })
+      router.refresh()
+    } catch (err) {
+      console.error("Failed to update candidate company", err)
     }
   }
 
@@ -423,10 +490,10 @@ export default function CandidateDatabase({ initialCandidates }: CandidateDataba
               draggable
               onDragStart={(e) => handleDragStart(e, candidate.id)}
               className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing group"
+              onClick={() => router.push(`/candidates/${candidate.id}`)}
             >
               <div 
                 className="flex items-center gap-4 flex-1"
-                onClick={() => router.push(`/candidates/${candidate.id}`)}
               >
                 <div className="w-12 h-12 rounded-full flex items-center justify-center text-green-700 font-semibold bg-green-100 flex-shrink-0">
                   {getInitials(candidate.name)}
@@ -442,24 +509,48 @@ export default function CandidateDatabase({ initialCandidates }: CandidateDataba
               </div>
               
               <div 
-                className="flex items-center gap-8 justify-end flex-1"
-                onClick={() => router.push(`/candidates/${candidate.id}`)}
+                className="flex items-center gap-4 justify-end flex-1"
               >
+                
+                {/* Company Dropdown */}
+                <div className="flex flex-col text-sm min-w-[120px]" onClick={e => e.stopPropagation()}>
+                   <select 
+                     value={candidate.company || 'unassigned'} 
+                     onChange={(e) => handleCompanyChange(e, candidate.id)}
+                     className="bg-gray-50 border border-gray-200 text-gray-700 rounded-md px-2 py-1 focus:ring-1 focus:ring-green-500 outline-none"
+                   >
+                     <option value="unassigned">No Company</option>
+                     {availableCompanies.map(comp => (
+                       <option key={comp} value={comp}>{comp}</option>
+                     ))}
+                   </select>
+                </div>
+
+                {/* Date / Time */}
                 <div className="flex items-center text-gray-500 text-sm min-w-[120px]">
                   <ArrowDownCircle className="w-4 h-4 mr-1.5 text-gray-400" />
                   {formattedDate}
                 </div>
 
-                <div className="text-sm italic text-gray-500 min-w-[150px] max-w-[200px] truncate hidden md:block">
-                  "{candidate.professionalSummary ? candidate.professionalSummary.substring(0, 30) + '...' : 'Candidate profile'}"
-                </div>
-
+                {/* Stage tag */}
                 <div className="flex items-center gap-3">
                   <span className={`px-4 py-1 rounded-full text-sm font-semibold ${getStatusStyle(candidate.recruitmentStage)}`}>
                     {candidate.recruitmentStage || 'New'}
                   </span>
-                  <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-green-600 transition-colors" />
                 </div>
+                
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                   <button 
+                     onClick={(e) => handleDeleteCandidate(e, candidate.id)}
+                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                     title="Delete Candidate"
+                   >
+                     <Trash2 className="w-4 h-4" />
+                   </button>
+                   <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-green-600 transition-colors" />
+                </div>
+
               </div>
             </div>
           )

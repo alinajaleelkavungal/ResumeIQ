@@ -9,12 +9,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing companyName' }, { status: 400 })
     }
 
-    const updated = await prisma.jobDescription.updateMany({
+    const updatedJobs = await prisma.jobDescription.updateMany({
+      where: { company: companyName },
+      data: { company: null }
+    })
+    
+    const updatedCands = await prisma.candidate.updateMany({
       where: { company: companyName },
       data: { company: null }
     })
 
-    return NextResponse.json({ success: true, count: updated.count })
+    try {
+      await prisma.company.delete({
+        where: { name: companyName }
+      })
+    } catch (e) {
+      console.error("Company model delete issue:", e)
+    }
+
+    return NextResponse.json({ success: true, jobsUpdated: updatedJobs.count, candidatesUpdated: updatedCands.count })
   } catch (error: any) {
     console.error('Failed to delete company:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

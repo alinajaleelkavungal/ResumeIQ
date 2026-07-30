@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { Building2, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-export default function CompaniesManager({ initialJobs }: { initialJobs: { company: string | null }[] }) {
+export default function CompaniesManager({ initialJobs, initialCandidates = [], savedCompanies = [] }: { initialJobs: { company: string | null }[], initialCandidates?: { company: string | null }[], savedCompanies?: string[] }) {
   const router = useRouter()
   const [jobs, setJobs] = useState(initialJobs)
   
@@ -17,10 +17,19 @@ export default function CompaniesManager({ initialJobs }: { initialJobs: { compa
 
   const companies = useMemo(() => {
     const counts: Record<string, number> = {}
+    
+    savedCompanies.forEach(name => { counts[name] = 0 })
     manualCompanies.forEach(name => { counts[name] = 0 })
-    jobs.forEach(j => {
+    
+    initialJobs.forEach(j => {
       if (j.company && j.company !== 'Unassigned') {
         counts[j.company] = (counts[j.company] || 0) + 1
+      }
+    })
+    
+    initialCandidates.forEach(c => {
+      if (c.company && c.company !== 'Unassigned') {
+         counts[c.company] = (counts[c.company] || 0) + 1
       }
     })
     
@@ -28,21 +37,36 @@ export default function CompaniesManager({ initialJobs }: { initialJobs: { compa
       name,
       count
     }))
-  }, [jobs, manualCompanies])
+  }, [initialJobs, initialCandidates, manualCompanies, savedCompanies])
 
-  const handleAddCompanySubmit = (e: React.KeyboardEvent<HTMLInputElement> | React.FocusEvent) => {
+  const handleAddCompanySubmit = async (e: React.KeyboardEvent<HTMLInputElement> | React.FocusEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     const val = newCompanyName.trim();
     if (val && !companies.find(c => c.name.toLowerCase() === val.toLowerCase())) {
       setManualCompanies(prev => [...prev, val])
+      setNewCompanyName('')
+      setIsAddingCompany(false)
+      
+      try {
+        await fetch('/api/company/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: val })
+        })
+        router.refresh()
+      } catch (err) {
+        console.error("Failed to add company", err)
+      }
+    } else {
+      setNewCompanyName('')
+      setIsAddingCompany(false)
     }
-    setNewCompanyName('')
-    setIsAddingCompany(false)
   }
 
   const handleDeleteCompany = async (companyName: string) => {
     setManualCompanies(prev => prev.filter(c => c !== companyName))
-    setJobs(prev => prev.map(j => j.company === companyName ? { company: 'Unassigned' } : j))
+    // We don't have setJobs locally anymore since we rely on server refresh for simplicity
+    // just optimism on manual
 
     try {
       await fetch('/api/company/delete', {
@@ -64,7 +88,6 @@ export default function CompaniesManager({ initialJobs }: { initialJobs: { compa
     
     if (val && oldVal && val !== oldVal) {
       setManualCompanies(prev => prev.includes(oldVal) ? prev.map(c => c === oldVal ? val : c) : [...prev, val])
-      setJobs(prev => prev.map(j => j.company === oldVal ? { company: val } : j))
 
       try {
         await fetch('/api/company/rename', {
@@ -113,7 +136,7 @@ export default function CompaniesManager({ initialJobs }: { initialJobs: { compa
                 <h3 className="text-lg font-semibold text-gray-700 leading-tight">
                   {company.name}
                 </h3>
-                <p className="text-xs text-gray-400 mt-1">Jobs Assigned</p>
+                <p className="text-xs text-gray-400 mt-1">Resumes & Jobs</p>
 
                 <div className="absolute top-3 right-3 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
