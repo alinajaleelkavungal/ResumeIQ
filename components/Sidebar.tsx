@@ -2,15 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Briefcase, LayoutGrid, Building2 } from 'lucide-react'
+import { Users, Briefcase, LayoutGrid, Calendar, Home } from 'lucide-react'
 
 export default function Sidebar() {
   const pathname = usePathname()
 
   const navItems = [
-    { name: 'Candidates', href: '/candidates', icon: Users },
+    { name: 'Home', href: '/candidates', icon: Home },
     { name: 'Sectors', href: '/sectors', icon: LayoutGrid },
-    { name: 'Companies', href: '/companies', icon: Building2 },
+  ]
+  const bottomNavItems = [
+    { name: 'Age', href: '/age', icon: Calendar },
+    { name: 'Experience', href: '/experience', icon: Briefcase },
   ]
 
   return (
@@ -22,6 +25,25 @@ export default function Sidebar() {
       <nav className="flex-1 space-y-2">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href) && (item.href !== '/' || pathname === '/')
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                isActive 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <item.icon className="w-5 h-5" />
+              <span>{item.name}</span>
+            </Link>
+          )
+        })}
+
+
+        {bottomNavItems.map((item) => {
+          const isActive = pathname.startsWith(item.href)
           return (
             <Link
               key={item.name}

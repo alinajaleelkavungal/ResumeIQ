@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads')
+const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads')
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {

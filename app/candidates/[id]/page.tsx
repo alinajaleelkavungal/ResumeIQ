@@ -1,204 +1,153 @@
 import prisma from '@/lib/prisma'
 import { notFound } from 'next/navigation'
-import { Mail, Phone, MapPin, Briefcase, Award, FolderGit2, BookOpen, UserCircle, Star, MessageCircle } from 'lucide-react'
-import ChatBox from '@/components/chat/ChatBox'
-import CandidateWorkflow from '@/components/CandidateWorkflow'
+import { Mail, Phone, MapPin, ClipboardList, FileText, ExternalLink, Calendar, Briefcase, LayoutGrid } from 'lucide-react'
 
-export default async function CandidateProfilePage({ params }: { params: { id: string } }) {
-  const candidate = await prisma.candidate.findUnique({
-    where: { id: params.id },
-    include: { resumes: true }
-  })
-
-  if (!candidate) {
+export default async function CandidateProfilePage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = await params;
+  // Use raw SQL to bypass the outdated Prisma Client which drops newly added columns
+  const candidatesRaw = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM Candidate WHERE id = ?`, resolvedParams.id)
+  
+  if (!candidatesRaw || candidatesRaw.length === 0) {
     notFound()
   }
 
-  const parseJson = (val: string | null) => {
-    try {
-      return val ? JSON.parse(val) : []
-    } catch {
-      return []
-    }
+  const rawCandidate = candidatesRaw[0]
+  const candidateResumes = await prisma.resume.findMany({ where: { candidateId: rawCandidate.id } })
+  
+  const candidate = {
+    ...rawCandidate,
+    createdAt: new Date(rawCandidate.createdAt),
+    updatedAt: new Date(rawCandidate.updatedAt),
+    resumes: candidateResumes
   }
 
-  const skills = parseJson(candidate.skills)
-  const education = parseJson(candidate.education)
-  const experience = parseJson(candidate.experience)
-  const projects = parseJson(candidate.projects)
-  const certifications = parseJson(candidate.certifications)
-  const languages = parseJson(candidate.languages)
+
+
+  const uploadDate = new Date(candidate.createdAt).toLocaleString('default', { 
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true 
+  })
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-8 bg-[#161616] min-h-screen text-gray-200">
-      {/* Header Section */}
-      <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-8">
-        <div className="flex justify-between items-start">
+    <div className="w-full h-full p-8 bg-gray-50 min-h-screen text-gray-900 font-sans">
+      <div className="max-w-6xl mx-auto space-y-6">
+        
+        {/* Header Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex justify-between items-start">
           <div>
-            <h1 className="text-3xl font-bold text-white">{candidate.name}</h1>
-            <div className="mt-4 space-y-2">
+            <h1 className="text-3xl font-bold text-gray-900">{candidate.name}</h1>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-600">
               {candidate.email && (
-                <div className="flex items-center text-gray-400">
-                  <Mail className="w-4 h-4 mr-2" />
+                <div className="flex items-center">
+                  <Mail className="w-4 h-4 mr-1.5 text-gray-400" />
                   {candidate.email}
                 </div>
               )}
               {candidate.phone && (
-                <div className="flex items-center text-gray-400">
-                  <Phone className="w-4 h-4 mr-2" />
+                <div className="flex items-center">
+                  <Phone className="w-4 h-4 mr-1.5 text-gray-400" />
                   {candidate.phone}
                 </div>
               )}
               {candidate.location && (
-                <div className="flex items-center text-gray-400">
-                  <MapPin className="w-4 h-4 mr-2" />
+                <div className="flex items-center">
+                  <MapPin className="w-4 h-4 mr-1.5 text-gray-400" />
                   {candidate.location}
                 </div>
               )}
             </div>
           </div>
-          <div className="text-right space-y-2">
-            {candidate.recommendedRole && (
-              <div className="inline-flex items-center bg-[#0F3B6A] text-blue-300 px-4 py-2 rounded-lg font-medium border border-[#164b85]">
-                <Star className="w-4 h-4 mr-2 fill-current" />
-                Recommended: {candidate.recommendedRole}
-              </div>
-            )}
-            {candidate.experienceLevel && (
-              <div className="block text-gray-400 font-medium">
-                Level: {candidate.experienceLevel}
-              </div>
-            )}
+          <div className="text-right">
+            <div className="inline-flex items-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200">
+              <Calendar className="w-4 h-4 mr-2 text-gray-500" />
+              Uploaded: {uploadDate}
+            </div>
           </div>
         </div>
 
-        {candidate.professionalSummary && (
-          <div className="mt-8 pt-6 border-t border-[#333]">
-            <h2 className="text-lg font-semibold text-white mb-3 flex items-center">
-              <UserCircle className="w-5 h-5 mr-2 text-blue-400" />
-              Professional Summary
-            </h2>
-            <p className="text-gray-400 leading-relaxed">{candidate.professionalSummary}</p>
+        {/* Main Content Split */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Left Column: Intake Details */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center pb-4 border-b border-gray-100">
+                <ClipboardList className="w-5 h-5 mr-2 text-green-600" />
+                Intake Details
+              </h2>
+              
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center">
+                    <Calendar className="w-4 h-4 mr-1.5 text-gray-400" />
+                    Age
+                  </p>
+                  <p className="text-base text-gray-900 font-medium">{candidate.age ? `${candidate.age} Years Old` : 'Not Specified'}</p>
+                </div>
+                
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center">
+                    <LayoutGrid className="w-4 h-4 mr-1.5 text-gray-400" />
+                    Sector
+                  </p>
+                  <p className="text-base text-gray-900 font-medium">{candidate.sector || 'Not Specified'}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center">
+                    <FileText className="w-4 h-4 mr-1.5 text-gray-400" />
+                    Job Category
+                  </p>
+                  <p className="text-base text-gray-900 font-medium">{candidate.category || 'Not Specified'}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center">
+                    <Briefcase className="w-4 h-4 mr-1.5 text-gray-400" />
+                    Experience
+                  </p>
+                  <p className="text-base text-gray-900 font-medium">{candidate.yearsOfExperience || 'Not Specified'}</p>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* RAG Chat specific to this candidate */}
-      <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] overflow-hidden">
-        <div className="bg-[#1A1A1A] border-b border-[#333] px-6 py-4 flex items-center">
-          <MessageCircle className="w-5 h-5 text-blue-400 mr-2" />
-          <h2 className="text-lg font-semibold text-blue-300">Ask AI About {candidate.name.split(' ')[0]}</h2>
-        </div>
-        <div className="p-1 bg-[#161616]">
-          <ChatBox candidateId={candidate.id} placeholder="e.g., Summarize this candidate's strongest skills..." />
-        </div>
-      </div>
-
-      {/* Recruitment Workflow (Notes, Interviews, Timeline) */}
-      <CandidateWorkflow candidateId={candidate.id} currentStage={candidate.recruitmentStage} />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Left Column */}
-        <div className="md:col-span-2 space-y-8">
-          
-          {/* Experience */}
-          {experience.length > 0 && (
-            <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-6">
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
-                <Briefcase className="w-5 h-5 mr-2 text-blue-400" />
-                Experience
-              </h2>
-              <div className="space-y-4">
-                {experience.map((exp: string, idx: number) => (
-                  <div key={idx} className="border-l-2 border-[#444] pl-4 py-1">
-                    <p className="text-gray-400">{exp}</p>
+          {/* Right Column: Embedded CV */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full flex flex-col">
+              <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-900 flex items-center">
+                  <FileText className="w-5 h-5 mr-2 text-green-600" />
+                  Candidate CV
+                </h2>
+                {candidate.resumes.length > 0 && (
+                  <a 
+                    href={candidate.resumes[0].fileUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="flex items-center px-4 py-2 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition-colors text-sm font-medium border border-green-200"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Open in New Tab
+                  </a>
+                )}
+              </div>
+              
+              <div className="flex-1 min-h-[800px] bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                {candidate.resumes.length > 0 ? (
+                  <iframe 
+                    src={`${candidate.resumes[0].fileUrl}#toolbar=0`} 
+                    className="w-full h-full min-h-[800px]"
+                    title="CV Viewer"
+                  />
+                ) : (
+                  <div className="w-full h-full min-h-[800px] flex flex-col items-center justify-center text-gray-400">
+                    <FileText className="w-16 h-16 mb-4 text-gray-300" />
+                    <p className="text-lg font-medium">No CV Document Uploaded</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
-          )}
-
-          {/* Education */}
-          {education.length > 0 && (
-            <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-6">
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
-                <BookOpen className="w-5 h-5 mr-2 text-blue-400" />
-                Education
-              </h2>
-              <div className="space-y-4">
-                {education.map((edu: string, idx: number) => (
-                  <div key={idx} className="border-l-2 border-[#444] pl-4 py-1">
-                    <p className="text-gray-400">{edu}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Projects */}
-          {projects.length > 0 && (
-            <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-6">
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
-                <FolderGit2 className="w-5 h-5 mr-2 text-blue-400" />
-                Projects
-              </h2>
-              <ul className="list-disc list-inside space-y-2 text-gray-400">
-                {projects.map((proj: string, idx: number) => (
-                  <li key={idx}>{proj}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-8">
-          
-          {/* Skills */}
-          {skills.length > 0 && (
-            <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Skills</h2>
-              <div className="flex flex-wrap gap-2">
-                {skills.map((skill: string, idx: number) => (
-                  <span key={idx} className="bg-[#2A2A2A] text-gray-300 px-3 py-1 rounded-full text-sm font-medium border border-[#444]">
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Certifications */}
-          {certifications.length > 0 && (
-            <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-6">
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
-                <Award className="w-5 h-5 mr-2 text-blue-400" />
-                Certifications
-              </h2>
-              <ul className="space-y-3">
-                {certifications.map((cert: string, idx: number) => (
-                  <li key={idx} className="text-gray-400 text-sm border-l-2 border-blue-500 pl-3">
-                    {cert}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Languages */}
-          {languages.length > 0 && (
-            <div className="bg-[#1C1C1C] rounded-xl shadow-sm border border-[#333] p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Languages</h2>
-              <div className="flex flex-wrap gap-2">
-                {languages.map((lang: string, idx: number) => (
-                  <span key={idx} className="bg-[#0F3B6A] text-blue-300 border border-[#164b85] px-3 py-1 rounded-lg text-sm font-medium">
-                    {lang}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          </div>
 
         </div>
       </div>

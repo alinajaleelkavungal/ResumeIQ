@@ -3,7 +3,7 @@ import ai from '@/lib/gemini'
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const response = await ai.models.embedContent({
-      model: 'text-embedding-004',
+      model: 'embedding-001',
       contents: text
     })
     

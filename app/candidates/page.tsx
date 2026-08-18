@@ -4,10 +4,16 @@ import CandidateDatabase from '@/components/CandidateDatabase'
 export const dynamic = 'force-dynamic'
 
 export default async function CandidatesPage() {
-  const candidates = await prisma.candidate.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: { resumes: true }
-  })
+  // Use raw SQL to bypass the outdated Prisma Client which drops newly added columns
+  const candidatesRaw = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM Candidate ORDER BY createdAt DESC`)
+  const allResumes = await prisma.resume.findMany()
+  
+  const candidates = candidatesRaw.map(c => ({
+    ...c,
+    createdAt: new Date(c.createdAt),
+    updatedAt: new Date(c.updatedAt),
+    resumes: allResumes.filter(r => r.candidateId === c.id)
+  }))
   
   const jobs = await prisma.jobDescription.findMany({
     select: { company: true },

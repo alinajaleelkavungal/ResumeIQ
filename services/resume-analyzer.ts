@@ -15,6 +15,7 @@ export interface CandidateInfo {
   languages: string[]
   recommendedRole: string | null
   experienceLevel: string | null
+  sector: string | null
 }
 
 const responseSchema: Schema = {
@@ -32,21 +33,22 @@ const responseSchema: Schema = {
     certifications: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of certifications" },
     languages: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of spoken or programming languages" },
     recommendedRole: { type: Type.STRING, description: "Best matching job role based on experience" },
-    experienceLevel: { type: Type.STRING, description: "Experience level (e.g., Junior, Mid, Senior, Lead)" }
+    experienceLevel: { type: Type.STRING, description: "Experience level (e.g., Junior, Mid, Senior, Lead)" },
+    sector: { type: Type.STRING, description: "Best matching sector from: Medical, IT, Mechanical, Engineering, Finance, Sales, Marketing, HR, Other" }
   },
   required: ['skills', 'education', 'experience', 'projects', 'certifications', 'languages']
 }
 
 export async function analyzeResumeText(rawText: string): Promise<CandidateInfo | null> {
   const prompt = `Analyze the following resume text and extract the candidate's information into a structured JSON format. 
-Make sure to extract all relevant skills, education, and experience. Determine the best matching recommendedRole and experienceLevel.
+Make sure to extract all relevant skills, education, and experience. Determine the best matching recommendedRole, experienceLevel, and sector.
 
 Resume Text:
 ${rawText}`
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-1.5-pro',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',

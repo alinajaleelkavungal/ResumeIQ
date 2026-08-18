@@ -32,6 +32,9 @@ model Candidate {
   experienceLevel     String?
   category            String?
   company             String?
+  age                 Int?
+  sector              String?
+  yearsOfExperience   String?
   resumes             Resume[]
   chatHistory         ChatHistory[]
   recruiterNotes      RecruiterNote[]

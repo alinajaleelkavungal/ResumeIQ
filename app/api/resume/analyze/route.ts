@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update the Candidate with AI structured data
-    await prisma.candidate.update({
+    const updatedCandidate = await prisma.candidate.update({
       where: { id: resume.candidateId },
       data: {
         name: candidateInfo.name || resume.candidate.name,
@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
         languages: JSON.stringify(candidateInfo.languages),
         recommendedRole: candidateInfo.recommendedRole || resume.candidate.recommendedRole,
         experienceLevel: candidateInfo.experienceLevel || resume.candidate.experienceLevel,
+        sector: candidateInfo.sector || resume.candidate.sector,
       }
     })
 
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       data: { processingStatus: 'COMPLETED' }
     })
 
-    return NextResponse.json({ success: true, message: 'Analysis completed successfully' })
+    return NextResponse.json({ success: true, message: 'Analysis completed successfully', candidate: updatedCandidate })
 
   } catch (error: any) {
     console.error('Analyze API Error:', error)

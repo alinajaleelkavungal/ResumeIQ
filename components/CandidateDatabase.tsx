@@ -3,8 +3,10 @@
 import { useState, useCallback, useMemo } from 'react'
 import { Search, UploadCloud, ChevronRight, X, Loader2, Code, Stethoscope, Settings, Plus, FileText, ChevronDown, CheckCircle, AlertCircle, ArrowDownCircle, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
+import UploadModal from './UploadModal'
+import EditCandidateModal from './EditCandidateModal'
 
 interface CandidateDatabaseProps {
   initialCandidates: any[]
@@ -14,9 +16,18 @@ interface CandidateDatabaseProps {
 
 export default function CandidateDatabase({ initialCandidates, availableCompanies = [], savedSectors = [] }: CandidateDatabaseProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlSector = searchParams.get('sector')
+
   const [candidates, setCandidates] = useState(initialCandidates)
   const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [activeCategory, setActiveCategory] = useState<string | null>(urlSector || null)
+  
+  // Upload Modal State
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  
+  // Edit Modal State
+  const [editingCandidate, setEditingCandidate] = useState<any>(null)
   
   // Sector Add States
   const [isAddingSector, setIsAddingSector] = useState(false)
@@ -49,8 +60,9 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
 
     // Count from candidates
     candidates.forEach(c => {
-      if (c.category && c.category !== 'Uncategorized') {
-        counts[c.category] = (counts[c.category] || 0) + 1
+      const sectorToCount = c.sector || c.category // Fallback for old data
+      if (sectorToCount && sectorToCount !== 'Uncategorized') {
+        counts[sectorToCount] = (counts[sectorToCount] || 0) + 1
       }
     })
     
@@ -67,74 +79,15 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
   const filteredCandidates = candidates.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase()) || 
                           (c.skills && c.skills.toLowerCase().includes(search.toLowerCase()))
-    const matchesCategory = activeCategory ? (c.category || 'Uncategorized') === activeCategory : true
+    
+    // Filter by activeCategory (which maps to sector now)
+    const matchesCategory = activeCategory ? (c.sector === activeCategory || c.category === activeCategory) : true
     return matchesSearch && matchesCategory
   })
 
-  // Upload Logic
-  const onDropFile = useCallback(async (acceptedFiles: File[]) => {
-    if (acceptedFiles.length === 0) return
-
-    setUploading(true)
-    setProgress(0)
-
-    for (let i = 0; i < acceptedFiles.length; i++) {
-      const formData = new FormData()
-      formData.append('file', acceptedFiles[i])
-
-      try {
-        const res = await fetch('/api/resume/upload', {
-          method: 'POST',
-          body: formData
-        })
-
-        if (res.ok) {
-          const data = await res.json()
-          
-          setAnalyzing(true)
-          await fetch('/api/resume/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resumeId: data.resume.id })
-          })
-
-          setAnalyzing(false)
-          setEmbedding(true)
-          await fetch('/api/resume/embed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resumeId: data.resume.id })
-          })
-
-        }
-      } catch (err) {
-        console.error("Upload failed", err)
-      }
-      
-      setEmbedding(false)
-      setProgress(Math.round(((i + 1) / acceptedFiles.length) * 100))
-    }
-
-    setUploading(false)
-    setAnalyzing(false)
-    setEmbedding(false)
-    setProgress(0)
-    
-    setTimeout(() => {
-      window.location.reload()
-    }, 1000)
-
-  }, [])
-
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop: onDropFile,
-    noClick: true,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/msword': ['.doc']
-    }
-  })
+  const openUploadModal = () => {
+    setIsUploadModalOpen(true)
+  }
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
@@ -180,7 +133,7 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
     // Optimistic UI Update
     setManualSectors(prev => prev.filter(s => s !== sectorName))
     setCandidates(prev => prev.map(c => 
-      c.category === sectorName ? { ...c, category: 'Uncategorized' } : c
+      (c.sector === sectorName || c.category === sectorName) ? { ...c, sector: null, category: 'Uncategorized' } : c
     ))
     if (activeCategory === sectorName) setActiveCategory(null)
 
@@ -221,7 +174,7 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
       })
       
       setCandidates(prev => prev.map(c => 
-        c.category === oldVal ? { ...c, category: val } : c
+        (c.sector === oldVal || c.category === oldVal) ? { ...c, sector: val, category: val } : c
       ))
       
       if (activeCategory === oldVal) setActiveCategory(val)
@@ -290,46 +243,37 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
     }
   }
 
-  const handleCompanyChange = async (e: React.ChangeEvent<HTMLSelectElement>, candidateId: string) => {
-    e.stopPropagation()
-    const newCompany = e.target.value;
-
-    // Optimistic update
-    setCandidates(prev => prev.map(c => 
-      c.id === candidateId ? { ...c, company: newCompany === "unassigned" ? null : newCompany } : c
-    ))
-
-    try {
-      await fetch('/api/candidate/update-company', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          candidateId, 
-          company: newCompany === "unassigned" ? null : newCompany 
-        })
-      })
-      router.refresh()
-    } catch (err) {
-      console.error("Failed to update candidate company", err)
-    }
-  }
+  // Removed handleCompanyChange
 
   return (
-    <div className="p-8 max-w-5xl mx-auto h-full flex flex-col space-y-8 bg-white min-h-screen font-sans">
+    <>
+      <UploadModal 
+        isOpen={isUploadModalOpen} 
+        onClose={() => setIsUploadModalOpen(false)} 
+        onSuccess={() => router.refresh()} 
+      />
+      <EditCandidateModal 
+        isOpen={!!editingCandidate} 
+        onClose={() => setEditingCandidate(null)} 
+        onSuccess={() => router.refresh()} 
+        candidate={editingCandidate}
+      />
+      <div className="p-8 max-w-5xl mx-auto h-full flex flex-col space-y-8 bg-white min-h-screen font-sans">
       
       {/* Top Bar */}
       <div className="flex gap-4 items-center">
-        <div className="flex-1">
+        <div className="flex-1 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input 
             type="text" 
             placeholder="Search by name, skill, or sector" 
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-4 pr-4 py-3 bg-[#2a2a2a] border-none rounded-lg text-gray-200 placeholder-gray-400 focus:outline-none shadow-sm text-sm"
+            className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-sm transition-all"
           />
         </div>
         <button 
-          onClick={open}
+          onClick={openUploadModal}
           className="flex items-center px-6 py-3 bg-[#22c55e] hover:bg-[#16a34a] rounded-lg text-white font-medium transition-colors shadow-sm"
         >
           <UploadCloud className="w-5 h-5 mr-2" />
@@ -337,145 +281,24 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
         </button>
       </div>
 
-      {/* Drag and Drop Zone */}
+      {/* Upload Banner */}
       <div 
-        {...getRootProps()} 
-        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-colors flex flex-col items-center justify-center ${
-          isDragActive ? 'border-green-500 bg-green-50' : 'border-green-300 bg-green-50/30'
-        }`}
+        onClick={openUploadModal}
+        className="relative border-2 border-dashed border-green-300 bg-green-50/30 hover:bg-green-50 cursor-pointer rounded-xl p-8 text-center transition-colors flex flex-col items-center justify-center"
       >
-        <input {...getInputProps()} />
-        
-        {uploading || analyzing || embedding ? (
-          <div className="w-full max-w-md mx-auto">
-            <div className="flex justify-between text-sm mb-2 text-green-800 font-medium">
-              <span className="flex items-center">
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                {embedding ? 'Creating Vector Embeddings...' : 
-                 analyzing ? 'AI Analyzing Resume...' : 
-                 'Uploading...'}
-              </span>
-              <span>{progress}%</span>
-            </div>
-            <div className="w-full bg-green-200 rounded-full h-2">
-              <div 
-                className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <UploadCloud className="h-8 w-8 text-green-600 mb-3" />
-            <p className="text-gray-600 font-medium text-[15px]">
-              Drag & drop CVs here, or click Upload — AI will read and sort them into a sector automatically
-            </p>
-          </>
-        )}
+        <UploadCloud className="h-8 w-8 text-green-600 mb-3" />
+        <p className="text-gray-600 font-medium text-[15px]">
+          Click here to upload CVs and fill Candidate Intake Forms
+        </p>
       </div>
 
-      {/* Sectors */}
-      <div>
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Sectors</h2>
-        <div className="flex flex-wrap gap-4">
-          {sectors.map((sector) => (
-            <div 
-              key={sector.name}
-              onClick={() => {
-                if (editingSector !== sector.name) {
-                  setActiveCategory(activeCategory === sector.name ? null : sector.name)
-                }
-              }}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDropToSector(e, sector.name)}
-              className={`group relative p-5 rounded-xl border cursor-pointer transition-colors w-full sm:w-[calc(50%-8px)] md:w-[calc(25%-12px)] min-w-[200px] ${
-                activeCategory === sector.name 
-                  ? 'bg-green-100 border-green-300' 
-                  : 'bg-[#F9FAF9] border-green-100 hover:border-green-300 hover:bg-green-50/50'
-              }`}
-            >
-              
-              {editingSector === sector.name ? (
-                <div className="flex flex-col h-full justify-center">
-                  <input 
-                    autoFocus
-                    type="text"
-                    value={editSectorName}
-                    onChange={(e) => setEditSectorName(e.target.value)}
-                    onKeyDown={handleEditSectorSubmit}
-                    onBlur={handleEditSectorSubmit}
-                    className="w-full bg-white border border-green-300 rounded-md px-3 py-1 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-green-500"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-              ) : (
-                <>
-                  <div className="flex justify-between items-start mb-4">
-                    <sector.icon className="w-6 h-6 text-green-600 pointer-events-none" />
-                    <span className="text-2xl font-bold text-gray-900 pointer-events-none">{sector.count}</span>
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-600 leading-tight pointer-events-none">
-                    {sector.name}
-                  </h3>
 
-                  {/* Edit / Delete Icons */}
-                  <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                      onClick={(e) => startEditingSector(e, sector.name)}
-                      className="p-1.5 bg-white rounded-md shadow-sm border border-gray-200 text-gray-500 hover:text-blue-500"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                    <button 
-                      onClick={(e) => handleDeleteSector(e, sector.name)}
-                      className="p-1.5 bg-white rounded-md shadow-sm border border-gray-200 text-gray-500 hover:text-red-500"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-          
-          {isAddingSector ? (
-             <div className="p-5 rounded-xl border border-dashed border-green-400 bg-green-50 w-full sm:w-[calc(50%-8px)] md:w-[calc(25%-12px)] min-w-[200px]">
-                <input 
-                  autoFocus
-                  type="text"
-                  placeholder="Sector name..."
-                  value={newSectorName}
-                  onChange={(e) => setNewSectorName(e.target.value)}
-                  onKeyDown={handleAddSectorSubmit}
-                  onBlur={handleAddSectorSubmit}
-                  className="w-full bg-white border border-green-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-green-500"
-                />
-                <p className="text-[10px] text-gray-500 mt-2 text-center">Press Enter to save</p>
-             </div>
-          ) : (
-            <div 
-              onClick={() => setIsAddingSector(true)}
-              className="p-5 rounded-xl border border-dashed border-green-300 bg-white flex flex-col items-center justify-center cursor-pointer hover:bg-green-50 transition-colors w-full sm:w-[calc(50%-8px)] md:w-[calc(25%-12px)] min-w-[200px]"
-            >
-              <Plus className="w-6 h-6 text-green-500 mb-2" />
-              <span className="text-sm font-medium text-gray-500">Add sector</span>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* List Header */}
       <div className="flex justify-between items-end mt-4">
         <h2 className="text-lg font-bold text-gray-900">
           {activeCategory || 'All Candidates'} · {filteredCandidates.length} resumes
         </h2>
-        
-        <div className="relative min-w-[200px]">
-          <div className="flex items-center justify-between w-full pl-4 pr-3 py-2 bg-[#2a2a2a] rounded-lg text-gray-300 text-sm cursor-pointer">
-            <span>Sort: Newest</span>
-            <ChevronDown className="w-4 h-4 text-green-600" />
-          </div>
-        </div>
       </div>
 
       {/* Candidate List */}
@@ -501,9 +324,30 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
 
                 <div className="flex flex-col">
                   <h3 className="font-bold text-gray-900 text-base group-hover:text-green-700 transition-colors">{candidate.name}</h3>
-                  <div className="flex items-center gap-1 text-sm text-gray-500">
-                    <span className="text-gray-400">Auto-tagged:</span>
-                    <span className="font-medium text-gray-700">{candidate.category || 'Uncategorized'}</span>
+                  <div className="flex items-center flex-wrap gap-2 mt-1">
+                    {candidate.sector && (
+                      <span className="bg-gray-100 border border-gray-200 px-2 py-0.5 rounded text-xs text-gray-600">{candidate.sector}</span>
+                    )}
+                    {candidate.category && (
+                      <span className="bg-gray-100 border border-gray-200 px-2 py-0.5 rounded text-xs text-gray-600">{candidate.category}</span>
+                    )}
+                    {candidate.yearsOfExperience && (
+                      <span className="bg-gray-100 border border-gray-200 px-2 py-0.5 rounded text-xs text-gray-600">{candidate.yearsOfExperience}</span>
+                    )}
+                    {candidate.age && (
+                      <span className="bg-gray-100 border border-gray-200 px-2 py-0.5 rounded text-xs text-gray-600">{candidate.age} yrs</span>
+                    )}
+                    
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingCandidate(candidate);
+                      }}
+                      className="ml-1 text-gray-400 hover:text-green-600 flex items-center gap-1 text-xs font-medium transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Edit Details
+                    </button>
                   </div>
                 </div>
               </div>
@@ -511,21 +355,7 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
               <div 
                 className="flex items-center gap-4 justify-end flex-1"
               >
-                
-                {/* Company Dropdown */}
-                <div className="flex flex-col text-sm min-w-[120px]" onClick={e => e.stopPropagation()}>
-                   <select 
-                     value={candidate.company || 'unassigned'} 
-                     onChange={(e) => handleCompanyChange(e, candidate.id)}
-                     className="bg-gray-50 border border-gray-200 text-gray-700 rounded-md px-2 py-1 focus:ring-1 focus:ring-green-500 outline-none"
-                   >
-                     <option value="unassigned">No Company</option>
-                     {availableCompanies.map(comp => (
-                       <option key={comp} value={comp}>{comp}</option>
-                     ))}
-                   </select>
-                </div>
-
+                {/* Removed Company Dropdown */}
                 {/* Date / Time */}
                 <div className="flex items-center text-gray-500 text-sm min-w-[120px]">
                   <ArrowDownCircle className="w-4 h-4 mr-1.5 text-gray-400" />
@@ -563,5 +393,6 @@ export default function CandidateDatabase({ initialCandidates, availableCompanie
         )}
       </div>
     </div>
+    </>
   )
 }

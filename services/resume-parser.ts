@@ -7,7 +7,7 @@ export interface ParsedResume {
 }
 
 export async function parsePdf(fileUrl: string): Promise<ParsedResume> {
-  const filePath = path.join(process.cwd(), fileUrl)
+  const filePath = path.join(process.cwd(), 'public', fileUrl)
   
   if (!fs.existsSync(filePath)) {
     throw new Error('File not found')
@@ -24,7 +24,7 @@ In the future, this will be replaced with actual PDF extraction logic (e.g., pdf
 }
 
 export async function parseDocx(fileUrl: string): Promise<ParsedResume> {
-  const filePath = path.join(process.cwd(), fileUrl)
+  const filePath = path.join(process.cwd(), 'public', fileUrl)
 
   if (!fs.existsSync(filePath)) {
     throw new Error('File not found')

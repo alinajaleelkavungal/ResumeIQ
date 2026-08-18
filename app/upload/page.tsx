@@ -1,22 +1,43 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { UploadCloud, File as FileIcon, X, CheckCircle, AlertCircle } from 'lucide-react'
+import { UploadCloud, File as FileIcon, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { SECTOR_CATEGORY_MAP } from '@/config/sector-categories'
 import { useRouter } from 'next/navigation'
 
+type UploadItem = {
+  id: string
+  file: File
+  status: 'PENDING' | 'UPLOADING' | 'ANALYZING' | 'EMBEDDING' | 'NEEDS_FORM' | 'FINALIZING' | 'COMPLETED' | 'ERROR'
+  candidateId?: string
+  suggestedSector?: string
+  formData: {
+    age: string
+    sector: string
+    category: string
+    yearsOfExperience: string
+  }
+  error?: string
+}
+
 export default function UploadPage() {
-  const [files, setFiles] = useState<File[]>([])
-  const [uploading, setUploading] = useState(false)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [embedding, setEmbedding] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [items, setItems] = useState<UploadItem[]>([])
   const router = useRouter()
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    setFiles((prev) => [...prev, ...acceptedFiles])
-    setMessage(null)
+    const newItems = acceptedFiles.map(file => ({
+      id: Math.random().toString(36).substring(7),
+      file,
+      status: 'PENDING' as const,
+      formData: {
+        age: '',
+        sector: '',
+        category: '',
+        yearsOfExperience: ''
+      }
+    }))
+    setItems(prev => [...prev, ...newItems])
   }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -28,80 +49,124 @@ export default function UploadPage() {
     }
   })
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index))
-  }
+  const processFile = async (item: UploadItem) => {
+    updateItem(item.id, { status: 'UPLOADING' })
+    const formData = new FormData()
+    formData.append('file', item.file)
 
-  const uploadFiles = async () => {
-    if (files.length === 0) return
+    try {
+      const res = await fetch('/api/resume/upload', {
+        method: 'POST',
+        body: formData
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json()
+      const candidateId = data.candidate.id
+      const resumeId = data.resume.id
 
-    setUploading(true)
-    setProgress(0)
-    setMessage(null)
+      updateItem(item.id, { status: 'ANALYZING', candidateId })
 
-    let successCount = 0
-    let errorCount = 0
-
-    for (let i = 0; i < files.length; i++) {
-      const formData = new FormData()
-      formData.append('file', files[i])
-
-      try {
-        const res = await fetch('/api/resume/upload', {
-          method: 'POST',
-          body: formData
-        })
-
-        if (res.ok) {
-          const data = await res.json()
-          
-          setAnalyzing(true)
-          // Call analyze
-          await fetch('/api/resume/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resumeId: data.resume.id })
-          })
-
-          setAnalyzing(false)
-          setEmbedding(true)
-          // Call embed
-          await fetch('/api/resume/embed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resumeId: data.resume.id })
-          })
-
-          successCount++
-        } else {
-          errorCount++
-        }
-      } catch (err) {
-        errorCount++
-      }
+      const analyzeRes = await fetch('/api/resume/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeId })
+      })
+      if (!analyzeRes.ok) throw new Error('Analyze failed')
       
-      setEmbedding(false)
-      setProgress(Math.round(((i + 1) / files.length) * 100))
-    }
+      const analyzeData = await analyzeRes.json()
+      let suggestedSector = ''
+      if (analyzeData.candidate && analyzeData.candidate.sector) {
+        suggestedSector = analyzeData.candidate.sector
+      }
 
-    setUploading(false)
-    setAnalyzing(false)
-    setEmbedding(false)
-    if (errorCount === 0) {
-      setMessage({ type: 'success', text: `Successfully uploaded ${successCount} resume(s)!` })
-      setFiles([])
-      // Redirect to candidates after a short delay
-      setTimeout(() => router.push('/candidates'), 2000)
-    } else {
-      setMessage({ type: 'error', text: `Uploaded ${successCount} successfully, but ${errorCount} failed.` })
+      updateItem(item.id, { status: 'EMBEDDING' })
+
+      const embedRes = await fetch('/api/resume/embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeId })
+      })
+      if (!embedRes.ok) throw new Error('Embed failed')
+
+      updateItem(item.id, { 
+        status: 'NEEDS_FORM', 
+        suggestedSector,
+        formData: { ...item.formData, sector: suggestedSector }
+      })
+
+    } catch (err: any) {
+      updateItem(item.id, { status: 'ERROR', error: err.message })
     }
   }
+
+  // Trigger processing for PENDING items
+  useEffect(() => {
+    const pendingItems = items.filter(i => i.status === 'PENDING')
+    pendingItems.forEach(item => {
+      processFile(item)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items])
+
+  const updateItem = (id: string, updates: Partial<UploadItem>) => {
+    setItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item))
+  }
+
+  const updateFormData = (id: string, field: keyof UploadItem['formData'], value: string) => {
+    setItems(prev => prev.map(item => {
+      if (item.id === id) {
+        const newFormData = { ...item.formData, [field]: value }
+        if (field === 'sector') {
+          newFormData.category = '' // Reset category when sector changes
+        }
+        return { ...item, formData: newFormData }
+      }
+      return item
+    }))
+  }
+
+  const removeFile = (id: string) => {
+    setItems(prev => prev.filter(i => i.id !== id))
+  }
+
+  const submitForm = async (item: UploadItem) => {
+    updateItem(item.id, { status: 'FINALIZING' })
+    try {
+      const res = await fetch('/api/candidate/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateId: item.candidateId,
+          ...item.formData
+        })
+      })
+      if (!res.ok) throw new Error('Failed to finalize')
+      updateItem(item.id, { status: 'COMPLETED' })
+    } catch (err: any) {
+      updateItem(item.id, { status: 'ERROR', error: err.message })
+    }
+  }
+
+  const sectors = Object.keys(SECTOR_CATEGORY_MAP)
+  const experienceOptions = ['1 year', '2 years', '3 years', '4 years', '5 years', '6 years', '7 years', '8 years', '9 years', '10+ years']
+
+  const allCompleted = items.length > 0 && items.every(i => i.status === 'COMPLETED')
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Upload Resumes</h1>
-        <p className="text-gray-500 mt-2">Upload candidate resumes (PDF or DOCX) to automatically extract their profile.</p>
+    <div className="max-w-5xl mx-auto p-6 space-y-8">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Upload Resumes</h1>
+          <p className="text-gray-500 mt-2">Upload candidate resumes (PDF or DOCX) to automatically extract their profile.</p>
+        </div>
+        {allCompleted && (
+          <button
+            onClick={() => router.push('/candidates')}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg shadow-sm transition-colors"
+          >
+            View Candidates
+          </button>
+        )}
       </div>
 
       <div 
@@ -117,63 +182,144 @@ export default function UploadPage() {
         <p className="text-xs text-gray-400 mt-4">Supported formats: PDF, DOCX (Max 10MB per file)</p>
       </div>
 
-      {files.length > 0 && (
-        <div className="bg-white border rounded-xl p-6 shadow-sm">
-          <h4 className="font-semibold text-gray-700 mb-4">Selected Files ({files.length})</h4>
-          <ul className="space-y-3">
-            {files.map((file, idx) => (
-              <li key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
-                <div className="flex items-center space-x-3">
-                  <FileIcon className="h-5 w-5 text-blue-500" />
-                  <span className="text-sm font-medium text-gray-700 truncate max-w-xs">{file.name}</span>
-                  <span className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+      {items.length > 0 && (
+        <div className="space-y-4">
+          <h4 className="font-semibold text-gray-700">Uploaded Files ({items.length})</h4>
+          
+          {items.map((item) => {
+            const isProcessing = ['PENDING', 'UPLOADING', 'ANALYZING', 'EMBEDDING'].includes(item.status)
+            const categories = item.formData.sector ? SECTOR_CATEGORY_MAP[item.formData.sector] || [] : []
+            const isFormValid = item.formData.age && item.formData.sector && item.formData.category && item.formData.yearsOfExperience
+
+            return (
+              <div key={item.id} className="bg-white border rounded-xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <FileIcon className="h-6 w-6 text-blue-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{item.file.name}</p>
+                      <p className="text-xs text-gray-500">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4">
+                    {isProcessing && (
+                      <div className="flex items-center text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        {item.status === 'PENDING' && 'Waiting...'}
+                        {item.status === 'UPLOADING' && 'Uploading...'}
+                        {item.status === 'ANALYZING' && 'AI Analyzing...'}
+                        {item.status === 'EMBEDDING' && 'Embedding...'}
+                      </div>
+                    )}
+                    {item.status === 'COMPLETED' && (
+                      <div className="flex items-center text-sm text-green-700 bg-green-50 px-3 py-1 rounded-full">
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Completed
+                      </div>
+                    )}
+                    {item.status === 'ERROR' && (
+                      <div className="flex items-center text-sm text-red-700 bg-red-50 px-3 py-1 rounded-full">
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Error
+                      </div>
+                    )}
+                    
+                    {!['COMPLETED', 'FINALIZING', 'UPLOADING', 'ANALYZING', 'EMBEDDING'].includes(item.status) && (
+                      <button 
+                        onClick={() => removeFile(item.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                        title="Remove file"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <button 
-                  onClick={() => removeFile(idx)}
-                  className="text-gray-400 hover:text-red-500 transition-colors"
-                  disabled={uploading}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </li>
-            ))}
-          </ul>
 
-          {(uploading || analyzing || embedding) && (
-            <div className="mt-6">
-              <div className="flex justify-between text-sm mb-2 text-gray-600 font-medium">
-                <span>
-                  {embedding ? 'Creating Vector Embeddings...' : 
-                   analyzing ? 'AI Analyzing Resume...' : 
-                   'Uploading Resume...'}
-                </span>
-                <span>{progress}%</span>
+                {item.status === 'NEEDS_FORM' && (
+                  <div className="bg-gray-50 border rounded-lg p-5 mt-4">
+                    <h5 className="text-sm font-semibold text-gray-800 mb-4 border-b pb-2">Candidate Details Required</h5>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>
+                        <input
+                          type="number"
+                          min="18"
+                          max="100"
+                          className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          value={item.formData.age}
+                          onChange={(e) => updateFormData(item.id, 'age', e.target.value)}
+                          placeholder="e.g. 28"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sector * {item.suggestedSector && <span className="text-xs text-blue-600 ml-1 font-normal">(AI Suggested)</span>}</label>
+                        <select
+                          className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          value={item.formData.sector}
+                          onChange={(e) => updateFormData(item.id, 'sector', e.target.value)}
+                        >
+                          <option value="">Select a sector</option>
+                          {sectors.map(s => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                        <select
+                          className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-400"
+                          value={item.formData.category}
+                          onChange={(e) => updateFormData(item.id, 'category', e.target.value)}
+                          disabled={!item.formData.sector}
+                        >
+                          <option value="">{item.formData.sector ? 'Select a category' : 'Select sector first'}</option>
+                          {categories.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Experience *</label>
+                        <select
+                          className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          value={item.formData.yearsOfExperience}
+                          onChange={(e) => updateFormData(item.id, 'yearsOfExperience', e.target.value)}
+                        >
+                          <option value="">Select experience</option>
+                          {experienceOptions.map(e => (
+                            <option key={e} value={e}>{e}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex justify-end">
+                      <button
+                        onClick={() => submitForm(item)}
+                        disabled={!isFormValid}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Submit & Finalize
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {item.status === 'FINALIZING' && (
+                  <div className="bg-gray-50 border rounded-lg p-5 mt-4 flex items-center justify-center space-x-2 text-gray-600">
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                    <span>Saving candidate details...</span>
+                  </div>
+                )}
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={uploadFiles}
-              disabled={uploading || analyzing || embedding}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg shadow-sm transition-colors disabled:opacity-50"
-            >
-              {uploading || analyzing || embedding ? 'Processing...' : 'Upload & Process Resumes'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {message && (
-        <div className={`p-4 rounded-lg flex items-center space-x-3 ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-          {message.type === 'success' ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-          <span className="font-medium">{message.text}</span>
+            )
+          })}
         </div>
       )}
     </div>

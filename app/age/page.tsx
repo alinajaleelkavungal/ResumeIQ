@@ -1,9 +1,9 @@
 import prisma from '@/lib/prisma'
-import SectorGroupList from './SectorGroupList'
+import AgeGroupList from './AgeGroupList'
 
 export const dynamic = 'force-dynamic'
 
-export default async function SectorsPage() {
+export default async function AgePage() {
   // Use raw SQL to bypass the outdated Prisma Client which drops newly added columns
   const candidatesRaw = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM Candidate ORDER BY createdAt DESC`)
   
@@ -15,7 +15,7 @@ export default async function SectorsPage() {
   
   return (
     <div className="w-full min-h-screen bg-white">
-      <SectorGroupList initialCandidates={candidates} />
+      <AgeGroupList initialCandidates={candidates} />
     </div>
   )
 }

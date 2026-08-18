@@ -12,15 +12,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
-    // Validate file type
-    const validTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword'
-    ]
-    
-    if (!validTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Invalid file type. Only PDF and DOCX are allowed.' }, { status: 400 })
+    // Validate file extension instead of strict MIME type
+    const fileNameLower = file.name.toLowerCase()
+    if (!fileNameLower.endsWith('.pdf') && !fileNameLower.endsWith('.docx') && !fileNameLower.endsWith('.doc')) {
+      return NextResponse.json({ error: 'Invalid file type. Only PDF and DOCX are allowed.', details: 'Invalid file extension' }, { status: 400 })
     }
 
     // Generate a unique filename
@@ -29,8 +24,11 @@ export async function POST(request: NextRequest) {
     // Save file
     const fileUrl = await saveFile(file, uniqueFileName)
 
+    // Determine file type from extension since browser MIME types can be unreliable
+    const resolvedType = fileNameLower.endsWith('.pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
     // Placeholder: Process resume file to get raw text
-    const { rawText } = await processResumeFile(fileUrl, file.type)
+    const { rawText } = await processResumeFile(fileUrl, resolvedType)
 
     // Create a Candidate record (placeholder values since AI analysis is not done yet)
     const candidateName = file.name.split('.')[0] || 'Unknown Candidate'
@@ -39,6 +37,7 @@ export async function POST(request: NextRequest) {
       data: {
         name: candidateName,
         email: null,
+        recruitmentStage: 'DRAFT'
       }
     })
 
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
         candidateId: candidate.id,
         fileName: file.name,
         fileUrl,
-        fileType: file.type,
+        fileType: resolvedType,
         processingStatus: 'PENDING',
         extractedText: rawText,
       }
@@ -61,6 +60,6 @@ export async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error: any) {
     console.error('Upload Error:', error)
-    return NextResponse.json({ error: 'Failed to process file upload' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to process file upload', details: error.message }, { status: 500 })
   }
 }
